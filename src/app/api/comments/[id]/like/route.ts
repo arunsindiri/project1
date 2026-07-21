@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 
 export async function POST(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   const commentId = params.id;
+  const supabase = getSupabase();
 
   const { data, error } = await supabase
     .from("comments")

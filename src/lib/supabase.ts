@@ -2,7 +2,7 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 let client: SupabaseClient | null = null;
 
-function getClient(): SupabaseClient {
+export function getSupabase(): SupabaseClient {
   if (!client) {
     client = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,10 +11,3 @@ function getClient(): SupabaseClient {
   }
   return client;
 }
-
-// Lazy proxy — only creates the client when first accessed at runtime
-export const supabase = new Proxy({} as SupabaseClient, {
-  get(_target, prop, _receiver) {
-    return (getClient() as any)[prop];
-  },
-});

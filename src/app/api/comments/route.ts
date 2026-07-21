@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "video_url is required for video comments" }, { status: 400 });
   }
 
+  const supabase = getSupabase();
   const { data, error } = await supabase
     .from("comments")
     .insert({
