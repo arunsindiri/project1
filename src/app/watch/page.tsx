@@ -147,7 +147,9 @@ export default function WatchPage() {
 
   const fetchComments = useCallback(async () => {
     try {
-      const res = await fetch(`/api/videos/${VIDEO_ID}/comments`);
+      const res = await fetch(`/api/videos/${VIDEO_ID}/comments`, {
+        cache: "no-store",
+      });
       if (res.ok) {
         const data = await res.json();
         setComments(data);
@@ -185,7 +187,8 @@ export default function WatchPage() {
       });
 
       if (res.ok) {
-        await fetchComments();
+        const newComment = await res.json();
+        setComments((prev) => [...prev, newComment]);
       }
     } catch (err) {
       console.error("Failed to post comment:", err);

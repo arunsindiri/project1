@@ -162,6 +162,49 @@ export async function GET(
 
 ---
 
+### Step 0.8: Fixed Comments Not Appearing After Posting
+
+After the GET comments bug was fixed, comments could be fetched from Supabase. But when a user typed a comment and clicked "Comment", the POST succeeded (saved to Supabase) but the new comment didn't appear below until the page was manually refreshed.
+
+**The problem:** After posting, the code re-fetched comments from the API to update the list. But the browser was caching the GET response, so the re-fetch returned the old (stale) data instead of the fresh data including the new comment.
+
+We tried two fixes:
+
+**Fix 1 — Cache busting the re-fetch:**
+Added `cache: "no-store"` to the initial fetch and `?t=${Date.now()}` to the re-fetch URL after posting. This forces the browser to make a fresh request instead of serving the cached response.
+
+```typescript
+// Initial fetch (with cache disabled)
+const res = await fetch(`/api/videos/${VIDEO_ID}/comments`, {
+  cache: "no-store",
+});
+
+// Re-fetch after posting (with timestamp to bust cache)
+const res2 = await fetch(`/api/videos/${VIDEO_ID}/comments?t=${Date.now()}`);
+```
+
+This helped but still wasn't reliable.
+
+**Fix 2 — Optimistic update (final solution):**
+Instead of re-fetching after posting, we add the new comment directly to the React state from the POST response. This is faster (no extra network request) and avoids any caching issues entirely.
+
+```typescript
+if (res.ok) {
+  const newComment = await res.json();
+  setComments((prev) => [...prev, newComment]);
+}
+```
+
+This is the pattern most apps use — when you post a tweet or comment, it appears instantly without waiting for a server round-trip.
+
+**How we debugged it:**
+1. Added `console.log` to `handleSubmit` and `handleNewComment` to confirm the click handler fires
+2. Saw POST returns `201` — so the comment is saved correctly
+3. Tried `cache: "no-store"` and cache-busting URLs — partially helped
+4. Switched to optimistic update — works perfectly every time
+
+---
+
 ### Step 1: Read the Project Docs
 
 We started by reading three files that explain the project:
@@ -430,20 +473,21 @@ The app compiles and runs with `npm run dev`. Two pages are implemented:
 | Search | `/search` | Empty |
 | Channel | `/channel` | Empty |
 
-**Backend connected:** Comments are fully working end-to-end. You can type a comment, click "Comment", and it saves to Supabase. On page load, all comments for that video are fetched from Supabase and displayed as a threaded tree. Video clips are uploaded to Cloudinary, and the URL is stored in Supabase alongside the comment.
+**Backend connected:** Comments are fully working end-to-end. You can type a comment, click "Comment", and it instantly appears in the comment list AND saves to Supabase. On page load, all comments for that video are fetched from Supabase and displayed as a threaded tree. Video clips are uploaded to Cloudinary, and the URL is stored in Supabase alongside the comment.
 
-**Test comments stored:** 3 test comments exist for video `dQw4w9WgXcQ` in the Supabase `comments` table.
+**Test comments stored:** Multiple test comments exist for video `dQw4w9WgXcQ` in the Supabase `comments` table (added during debugging).
 
 ---
 
 ## What's Next
 
-Now that the core commenting system works end-to-end with Supabase, we'll continue with:
+Now that comments work fully end-to-end (post, fetch, display instantly), we'll continue with:
 
 1. ~~Phase 1~~ — Set up Supabase, YouTube embedding, basic pages ✅
 2. ~~Phase 2~~ — Text comments with threading ✅
 3. ~~Phase 3~~ — Video comments ✅ (upload + camera recording)
-4. **Phase 4** — Timestamp comments with scrubber markers
-5. **Phase 5** — Auth page (Supabase Auth — sign up / log in)
-6. **Phase 6** — Search page and Channel page
-7. **Phase 7** — Polish and responsive design
+4. ~~Phase 3.5~~ — Comment display bug fixes ✅ (GET filtering, optimistic updates)
+5. **Phase 4** — Timestamp comments with scrubber markers
+6. **Phase 5** — Auth page (Supabase Auth — sign up / log in)
+7. **Phase 6** — Search page and Channel page
+8. **Phase 7** — Polish and responsive design
