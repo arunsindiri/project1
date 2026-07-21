@@ -205,6 +205,124 @@ This is the pattern most apps use — when you post a tweet or comment, it appea
 
 ---
 
+### Step 0.9: Fixed Supabase Client Crash on Vercel Build
+
+After pushing to GitHub, Vercel's build failed with:
+
+```
+Error: supabaseUrl is required.
+```
+
+**The problem:** `src/lib/supabase.ts` used a JavaScript `Proxy` to lazily initialize the Supabase client. During Vercel's build step, the Proxy's getter was called before environment variables were loaded, causing the crash.
+
+**The fix:** Replaced the Proxy with a simple `getSupabase()` function that creates the client on first call:
+
+```typescript
+// Before (broken on Vercel build):
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(_, prop) {
+    return (supabaseClient ??= createClient(...))[prop as keyof SupabaseClient];
+  },
+});
+
+// After (works everywhere):
+let supabaseClient: SupabaseClient | null = null;
+
+export function getSupabase(): SupabaseClient {
+  if (!supabaseClient) {
+    supabaseClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+  }
+  return supabaseClient;
+}
+```
+
+All API routes now call `getSupabase()` instead of importing `supabase` directly.
+
+### Step 0.10: Fixed Build Errors from Empty Stub Files
+
+Several pages (`/auth`, `/search`, `/channel`) and API routes (`/api/videos`, `/api/comments/[id]/like`, `/api/upload/video-comment`) had empty files that caused Next.js build errors:
+
+```
+Type error: Route "/" is missing "export const GET" or "export const POST"
+```
+
+**The fix:** Added minimal stub exports to each file so the build passes. These are placeholders until the actual features are implemented.
+
+### Step 0.11: Fixed GitHub Actions Build Cache
+
+The first GitHub Actions deployment failed because of a stale `/.next/cache` from a previous run.
+
+**The fix:** Removed the cache step from `.github/workflows/nextjs.yml` so every build starts fresh.
+
+### Step 0.12: Fixed Vercel Deployment — Environment Variables
+
+After deploying to Vercel, the app crashed because `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` weren't configured in the Vercel dashboard.
+
+**The fix:** Added both environment variables in Vercel Project Settings → Environment Variables, matching the values from `.env.local`.
+
+### Step 0.13: Fixed GET Comments Returning Fewer Rows on Vercel
+
+After deploying to Vercel, comments posted via POST appeared with optimistic updates but disappeared on page refresh. Investigation revealed:
+
+- The Supabase REST API confirmed all comments existed in the database (20 rows)
+- The POST route returned `201` with correct data
+- But the GET route only returned 17 of 20 comments
+
+**The problem:** The Supabase JS client's `.eq()` filter continued to silently return fewer rows on Vercel's serverless runtime. Even switching to direct `fetch` against Supabase's REST API didn't fully fix it — Vercel was caching the GET response.
+
+**The fix:** Three changes:
+
+1. **Bypassed the Supabase JS client entirely** — the GET route now uses raw `fetch` against Supabase's PostgREST API directly:
+
+```typescript
+const url = `${supabaseUrl}/rest/v1/comments?video_id=eq.${encodeURIComponent(videoId)}&order=created_at.asc&limit=1000&select=...`;
+
+const res = await fetch(url, {
+  cache: "no-store",
+  headers: {
+    apikey: supabaseKey,
+    Authorization: `Bearer ${supabaseKey}`,
+    Prefer: "return=representation",
+  },
+});
+```
+
+2. **Added `export const dynamic = "force-dynamic"`** to prevent Next.js from caching the route handler.
+
+3. **Added cache control headers** to the response:
+
+```typescript
+return NextResponse.json(data, {
+  headers: {
+    "Cache-Control": "no-store, no-cache, must-revalidate",
+    Pragma: "no-cache",
+  },
+});
+```
+
+### Step 0.14: Fixed `onSubmit` Not Being Awaited in CommentComposer
+
+The `CommentComposer` component called `onSubmit()` (which triggers the POST) but didn't `await` it. This meant the text input cleared immediately (making it look like the comment was posted) even if the POST was still in progress or had failed.
+
+**The fix:** Added `await` before `onSubmit()` in `CommentComposer.tsx`:
+
+```typescript
+// Before (not awaited — text clears before POST completes):
+onSubmit({...});
+setText("");
+
+// After (waits for POST to complete):
+await onSubmit({...});
+setText("");
+```
+
+Also added `console.log` in `handleNewComment` on the watch page to log POST response status and data for debugging.
+
+---
+
 ### Step 1: Read the Project Docs
 
 We started by reading three files that explain the project:
@@ -463,7 +581,7 @@ npm run dev                  # starts at http://localhost:3000
 
 ## Current State (as of this commit)
 
-The app compiles and runs with `npm run dev`. Two pages are implemented:
+The app compiles and runs locally (`npm run dev`) and is deployed on **Vercel** at `https://vidtalk.6281401.xyz`.
 
 | Page | Path | What Works |
 |------|------|-----------|
@@ -473,21 +591,37 @@ The app compiles and runs with `npm run dev`. Two pages are implemented:
 | Search | `/search` | Empty |
 | Channel | `/channel` | Empty |
 
-**Backend connected:** Comments are fully working end-to-end. You can type a comment, click "Comment", and it instantly appears in the comment list AND saves to Supabase. On page load, all comments for that video are fetched from Supabase and displayed as a threaded tree. Video clips are uploaded to Cloudinary, and the URL is stored in Supabase alongside the comment.
+**Backend connected:** Comments are fully working end-to-end on Vercel:
 
-**Test comments stored:** Multiple test comments exist for video `dQw4w9WgXcQ` in the Supabase `comments` table (added during debugging).
+- **POST:** Type a comment, click "Comment" → instantly appears in the comment list (optimistic update) AND saves to Supabase
+- **GET:** On page load, all comments for the video are fetched from Supabase and displayed as a threaded tree
+- **Persistence:** Comments survive page refresh — confirmed working
+- **Video clips:** Uploaded to Cloudinary, URL stored in Supabase alongside the comment
+
+**Supabase project:** `https://axjknecyakbvzxaslvci.supabase.co`
+**Vercel deployment:** `https://vidtalk.6281401.xyz`
+**GitHub repo:** `github.com:arunsindiri/project1.git`
+
+**Test comments stored:** 21+ test comments exist for video `dQw4w9WgXcQ` in the Supabase `comments` table.
+
+**Key debugging lessons learned:**
+- Supabase JS client `.eq()` filter can silently return fewer rows on serverless runtimes — bypass with direct REST API fetch
+- Vercel caches GET responses by default — use `force-dynamic` and `Cache-Control: no-store` headers
+- Always `await` async callbacks in React event handlers — otherwise errors are swallowed silently
+- Supabase client initialization must be lazy (function, not top-level) to avoid build-time crashes on Vercel
 
 ---
 
 ## What's Next
 
-Now that comments work fully end-to-end (post, fetch, display instantly), we'll continue with:
+Now that comments work fully end-to-end (post, fetch, persist on refresh), we'll continue with:
 
 1. ~~Phase 1~~ — Set up Supabase, YouTube embedding, basic pages ✅
 2. ~~Phase 2~~ — Text comments with threading ✅
 3. ~~Phase 3~~ — Video comments ✅ (upload + camera recording)
-4. ~~Phase 3.5~~ — Comment display bug fixes ✅ (GET filtering, optimistic updates)
-5. **Phase 4** — Timestamp comments with scrubber markers
-6. **Phase 5** — Auth page (Supabase Auth — sign up / log in)
-7. **Phase 6** — Search page and Channel page
-8. **Phase 7** — Polish and responsive design
+4. ~~Phase 3.5~~ — Comment display bug fixes ✅ (GET filtering, optimistic updates, Vercel caching, Supabase JS client bypass)
+5. ~~Phase 3.6~~ — Vercel deployment ✅ (env vars, build fixes, cache control)
+6. **Phase 4** — Timestamp comments with scrubber markers
+7. **Phase 5** — Auth page (Supabase Auth — sign up / log in)
+8. **Phase 6** — Search page and Channel page
+9. **Phase 7** — Polish and responsive design
