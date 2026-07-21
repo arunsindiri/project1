@@ -161,14 +161,14 @@ export default function CommentComposer({
     try {
       if (mode === "video" && blob) {
         const videoUrl = await uploadVideoComment(blob);
-        onSubmit({
+        await onSubmit({
           type: "video",
           video_url: videoUrl,
           parent_comment_id: parentId,
           timestamp_seconds: useTimestamp ? currentTimestamp ?? null : null,
         });
       } else {
-        onSubmit({
+        await onSubmit({
           type: "text",
           text_content: text,
           parent_comment_id: parentId,

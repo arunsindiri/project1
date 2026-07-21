@@ -186,9 +186,13 @@ export default function WatchPage() {
         }),
       });
 
+      const data = await res.json();
+      console.log("POST /api/comments:", res.status, data);
+
       if (res.ok) {
-        const newComment = await res.json();
-        setComments((prev) => [...prev, newComment]);
+        setComments((prev) => [...prev, data]);
+      } else {
+        console.error("Comment failed:", data);
       }
     } catch (err) {
       console.error("Failed to post comment:", err);
