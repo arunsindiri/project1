@@ -50,6 +50,116 @@ create table comments (
 );
 ```
 
+### Step 0.6: Set Up Supabase Table & RLS Policies
+
+After creating the `comments` table in Supabase's SQL Editor, we needed to set up **Row Level Security (RLS)** policies. RLS is Supabase's way of controlling who can read, write, and modify data. Without policies, the table exists but nobody can access it through the API.
+
+We ran these queries in the **Supabase SQL Editor** (dashboard → SQL Editor → paste → Run):
+
+**1. Create the table (if not already done):**
+
+```sql
+create table comments (
+  id uuid default gen_random_uuid() primary key,
+  video_id text not null,
+  parent_comment_id uuid references comments(id),
+  author_id text default 'anonymous',
+  type text not null check (type in ('text', 'video')),
+  text_content text,
+  video_url text,
+  timestamp_seconds integer,
+  created_at timestamptz default now(),
+  likes_count integer default 0
+);
+```
+
+**2. Allow anyone to insert (post) comments:**
+
+```sql
+create policy "Allow all inserts" on comments
+  for insert with check (true);
+```
+
+This means: "anyone can add a new row to the comments table." The `with check (true)` part means there are no conditions — every insert is allowed.
+
+**3. Allow anyone to read (select) comments:**
+
+```sql
+create policy "Allow all selects" on comments
+  for select using (true);
+```
+
+This means: "anyone can read rows from the comments table." Without this, GET requests would return empty arrays even though data exists in the database.
+
+**4. Allow anyone to update comments (needed for likes):**
+
+```sql
+create policy "Allow all updates" on comments
+  for update using (true);
+```
+
+This means: "anyone can update rows in the comments table." We need this so the like button can increment `likes_count`.
+
+> **Why are these separate?** RLS policies are per-operation. You can allow reads but block writes, or allow inserts but block deletes. We're allowing everything for now since this is a development stage — in production you'd tie these to authenticated users.
+
+---
+
+### Step 0.7: Fixed the GET Comments Bug
+
+After setting up Supabase and the RLS policies, inserting comments worked perfectly (POST returned data), but fetching comments (GET) returned empty arrays `[]` even though data clearly existed.
+
+**The problem:** The Supabase JS client's `.eq()` filter wasn't matching rows correctly, even though the values were identical. This is a known quirk in certain versions of `@supabase/supabase-js` where `.eq()` on a `text` column can fail silently — returning no error, just an empty result set.
+
+**The fix:** Switched from `.eq("video_id", videoId)` to `.ilike("video_id", videoId)` in the GET route handler. `.ilike` does a case-insensitive pattern match, which works correctly with the same data.
+
+```typescript
+// Before (broken):
+const { data, error } = await supabase
+  .from("comments")
+  .select("*")
+  .eq("video_id", videoId)       // ← silently returned empty []
+
+// After (working):
+const { data, error } = await supabase
+  .from("comments")
+  .select("id, video_id, parent_comment_id, author_id, type, text_content, video_url, timestamp_seconds, created_at, likes_count")
+  .ilike("video_id", videoId)     // ← correctly returns matching rows
+```
+
+**How we debugged it:**
+1. Confirmed the comment was inserted via POST (Supabase returned the new row with an ID)
+2. Queried Supabase's REST API directly with `curl` — data was there
+3. Ran the same Supabase query in a standalone Node.js script — it returned data
+4. Added logging to the route handler — the params were correct, no errors, but `data` was `[]`
+5. Tried fetching ALL comments without any filter — that worked! So the table was accessible
+6. The only difference was `.eq()` — switching to `.ilike()` fixed it
+
+**The complete working GET route** (`src/app/api/videos/[id]/comments/route.ts`):
+
+```typescript
+import { NextRequest, NextResponse } from "next/server";
+import { supabase } from "@/lib/supabase";
+
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const videoId = params.id;
+
+  const { data, error } = await supabase
+    .from("comments")
+    .select("id, video_id, parent_comment_id, author_id, type, text_content, video_url, timestamp_seconds, created_at, likes_count")
+    .ilike("video_id", videoId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json(data);
+}
+```
+
 ---
 
 ### Step 1: Read the Project Docs
@@ -320,16 +430,20 @@ The app compiles and runs with `npm run dev`. Two pages are implemented:
 | Search | `/search` | Empty |
 | Channel | `/channel` | Empty |
 
-**Backend connected:** Comments are now saved to and fetched from Supabase. Video clips are uploaded to Cloudinary, and the URL is stored in Supabase alongside the comment.
+**Backend connected:** Comments are fully working end-to-end. You can type a comment, click "Comment", and it saves to Supabase. On page load, all comments for that video are fetched from Supabase and displayed as a threaded tree. Video clips are uploaded to Cloudinary, and the URL is stored in Supabase alongside the comment.
+
+**Test comments stored:** 3 test comments exist for video `dQw4w9WgXcQ` in the Supabase `comments` table.
 
 ---
 
 ## What's Next
 
-Now that the file structure is in place and the app compiles, we'll start implementing:
+Now that the core commenting system works end-to-end with Supabase, we'll continue with:
 
-1. **Phase 1** — Set up Supabase, YouTube embedding, basic pages
-2. **Phase 2** — Text comments with threading
-3. **Phase 3** — Video comments
+1. ~~Phase 1~~ — Set up Supabase, YouTube embedding, basic pages ✅
+2. ~~Phase 2~~ — Text comments with threading ✅
+3. ~~Phase 3~~ — Video comments ✅ (upload + camera recording)
 4. **Phase 4** — Timestamp comments with scrubber markers
-5. **Phase 5** — Polish and responsive design
+5. **Phase 5** — Auth page (Supabase Auth — sign up / log in)
+6. **Phase 6** — Search page and Channel page
+7. **Phase 7** — Polish and responsive design
