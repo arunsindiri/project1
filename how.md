@@ -157,7 +157,7 @@ User visits Home (/)
 |------|---------|
 | `VideoPlayer.tsx` | Embeds a YouTube video using IFrame API |
 | `CommentThread.tsx` | Renders a comment and recursively renders its replies |
-| `CommentComposer.tsx` | Input form to write a comment (text or video) |
+| `CommentComposer.tsx` | Input form to write/post a comment — supports text, video upload, and camera recording |
 | `CommentItem.tsx` | Displays a single comment (author, text/video, timestamp, likes) |
 | `Navbar.tsx` | Top bar with logo, search, and auth links |
 | `SearchBar.tsx` | Search input field |
@@ -289,7 +289,7 @@ The app compiles and runs with `npm run dev`. Two pages are implemented with moc
 | Page | Path | What Works |
 |------|------|-----------|
 | Home | `/` | 3 demo YouTube video cards in a grid, each links to the watch page |
-| Watch | `/watch` | YouTube iframe embed, threaded comments with mock data, reply UI, like button, video comments, timestamp badges |
+| Watch | `/watch` | YouTube iframe embed, threaded comments with mock data, reply UI, like button, video comments (upload or record via camera), timestamp badges |
 | Auth | `/auth` | Empty |
 | Search | `/search` | Empty |
 | Channel | `/channel` | Empty |
