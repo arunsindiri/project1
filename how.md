@@ -14,6 +14,18 @@ We don't host any videos ourselves. YouTube handles all the video playback. We j
 
 ## What We Did So Far
 
+### Step 0: Fixed a Broken Import
+
+When first running `npm run dev`, the app failed with:
+
+```
+Module not found: Can't resolve './globals.css'
+```
+
+The issue: `layout.tsx` imported `./globals.css`, but the file lived at `src/styles/globals.css`. Fixed by moving `globals.css` from `src/styles/` into `src/app/` so the import resolves correctly.
+
+---
+
 ### Step 1: Read the Project Docs
 
 We started by reading three files that explain the project:
@@ -48,6 +60,7 @@ We created all the folders and empty files needed for the project. Here's the fu
 src/
 │
 ├── app/                          # Next.js pages (App Router)
+│   ├── globals.css               # Global CSS + Tailwind imports
 │   ├── layout.tsx                # Root layout (wraps all pages)
 │   ├── page.tsx                  # Home page — shows video grid
 │   │
@@ -98,8 +111,7 @@ src/
 ├── hooks/                        # Custom React hooks
 │   └── useYouTubePlayer.ts       # Hook to control YouTube player
 │
-├── styles/
-│   └── globals.css               # Global CSS + Tailwind imports
+├── styles/                        # (empty — globals.css moved to app/)
 │
 └── types/
     └── index.ts                  # TypeScript type definitions
@@ -260,11 +272,35 @@ CLOUDINARY_API_KEY=             # Your Cloudinary API key
 CLOUDINARY_API_SECRET=          # Your Cloudinary API secret
 ```
 
+## Running the App
+
+```bash
+cp .env.example .env.local   # fill in values
+npm install
+npm run dev                  # starts at http://localhost:3000
+```
+
+---
+
+## Current State (as of this commit)
+
+The app compiles and runs with `npm run dev`. Two pages are implemented with mock/hardcoded data:
+
+| Page | Path | What Works |
+|------|------|-----------|
+| Home | `/` | 3 demo YouTube video cards in a grid, each links to the watch page |
+| Watch | `/watch` | YouTube iframe embed, threaded comments with mock data, reply UI, like button, video comments, timestamp badges |
+| Auth | `/auth` | Empty |
+| Search | `/search` | Empty |
+| Channel | `/channel` | Empty |
+
+No backend connected yet — all data is hardcoded.
+
 ---
 
 ## What's Next
 
-Now that the file structure is in place, we'll start implementing:
+Now that the file structure is in place and the app compiles, we'll start implementing:
 
 1. **Phase 1** — Set up Supabase, YouTube embedding, basic pages
 2. **Phase 2** — Text comments with threading
