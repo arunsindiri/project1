@@ -24,6 +24,32 @@ Module not found: Can't resolve './globals.css'
 
 The issue: `layout.tsx` imported `./globals.css`, but the file lived at `src/styles/globals.css`. Fixed by moving `globals.css` from `src/styles/` into `src/app/` so the import resolves correctly.
 
+### Step 0.5: Connected Supabase for Comments
+
+Comments (text and video) are now stored in Supabase and fetched on page load:
+
+- **POST `/api/comments`** — saves a new comment (text or video URL) to the `comments` table
+- **GET `/api/videos/[id]/comments`** — fetches all comments for a video
+- The watch page calls these APIs instead of using hardcoded mock data
+- Video clips are uploaded to Cloudinary first, then the URL is stored in Supabase
+
+**Required Supabase table:**
+
+```sql
+create table comments (
+  id uuid default gen_random_uuid() primary key,
+  video_id text not null,
+  parent_comment_id uuid references comments(id),
+  author_id text default 'anonymous',
+  type text not null check (type in ('text', 'video')),
+  text_content text,
+  video_url text,
+  timestamp_seconds integer,
+  created_at timestamptz default now(),
+  likes_count integer default 0
+);
+```
+
 ---
 
 ### Step 1: Read the Project Docs
@@ -284,17 +310,17 @@ npm run dev                  # starts at http://localhost:3000
 
 ## Current State (as of this commit)
 
-The app compiles and runs with `npm run dev`. Two pages are implemented with mock/hardcoded data:
+The app compiles and runs with `npm run dev`. Two pages are implemented:
 
 | Page | Path | What Works |
 |------|------|-----------|
 | Home | `/` | 3 demo YouTube video cards in a grid, each links to the watch page |
-| Watch | `/watch` | YouTube iframe embed, threaded comments with mock data, reply UI, like button, video comments (upload or record via camera), timestamp badges |
+| Watch | `/watch` | YouTube iframe embed, threaded comments (stored in Supabase), reply UI, like button, video comments (upload or record via camera), timestamp badges |
 | Auth | `/auth` | Empty |
 | Search | `/search` | Empty |
 | Channel | `/channel` | Empty |
 
-No backend connected yet — all data is hardcoded.
+**Backend connected:** Comments are now saved to and fetched from Supabase. Video clips are uploaded to Cloudinary, and the URL is stored in Supabase alongside the comment.
 
 ---
 

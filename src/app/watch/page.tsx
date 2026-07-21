@@ -1,57 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import CommentComposer from "@/components/CommentComposer";
 import type { Comment } from "@/types";
-
-const MOCK_COMMENTS: Comment[] = [
-  {
-    id: "1",
-    video_id: "dQw4w9WgXcQ",
-    parent_comment_id: null,
-    author_id: "u1",
-    type: "text",
-    text_content: "This is a great video!",
-    video_url: null,
-    timestamp_seconds: 30,
-    created_at: "2026-07-20T10:00:00Z",
-    likes_count: 12,
-    author: { id: "u1", username: "alice", avatar_url: "", created_at: "" },
-  },
-  {
-    id: "2",
-    video_id: "dQw4w9WgXcQ",
-    parent_comment_id: "1",
-    author_id: "u2",
-    type: "text",
-    text_content: "Agreed, loved the intro!",
-    video_url: null,
-    timestamp_seconds: null,
-    created_at: "2026-07-20T11:00:00Z",
-    likes_count: 4,
-    author: { id: "u2", username: "bob", avatar_url: "", created_at: "" },
-  },
-  {
-    id: "3",
-    video_id: "dQw4w9WgXcQ",
-    parent_comment_id: null,
-    author_id: "u3",
-    type: "video",
-    text_content: null,
-    video_url: "https://storage.example.com/clip1.mp4",
-    timestamp_seconds: 83,
-    created_at: "2026-07-20T12:00:00Z",
-    likes_count: 8,
-    author: { id: "u3", username: "charlie", avatar_url: "", created_at: "" },
-  },
-];
 
 function CommentItem({
   comment,
   onReply,
+  onSubmit,
 }: {
   comment: Comment;
   onReply: (parentId: string) => void;
+  onSubmit: (c: {
+    type: "text" | "video";
+    text_content?: string;
+    video_url?: string;
+    parent_comment_id?: string | null;
+    timestamp_seconds?: number | null;
+  }) => void;
 }) {
   const [showReplyBox, setShowReplyBox] = useState(false);
   const [showReplies, setShowReplies] = useState(true);
@@ -124,7 +90,7 @@ function CommentItem({
                 videoId={comment.video_id}
                 parentId={comment.id}
                 onSubmit={(c) => {
-                  console.log("Reply to", comment.id, c);
+                  onSubmit(c);
                   setShowReplyBox(false);
                 }}
               />
@@ -146,7 +112,7 @@ function CommentItem({
       {hasReplies && showReplies && (
         <div className="ml-12 border-l-2 border-gray-100 pl-4">
           {comment.replies!.map((reply) => (
-            <CommentItem key={reply.id} comment={reply} onReply={onReply} />
+            <CommentItem key={reply.id} comment={reply} onReply={onReply} onSubmit={onSubmit} />
           ))}
         </div>
       )}
@@ -171,37 +137,59 @@ function buildTree(comments: Comment[]): Comment[] {
   return roots;
 }
 
+const VIDEO_ID = "dQw4w9WgXcQ";
+
 export default function WatchPage() {
-  const [comments, setComments] = useState<Comment[]>(MOCK_COMMENTS);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [loading, setLoading] = useState(true);
   const tree = buildTree(comments);
   const [currentTimestamp] = useState<number | null>(30);
 
-  function handleNewComment(c: {
+  const fetchComments = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/videos/${VIDEO_ID}/comments`);
+      if (res.ok) {
+        const data = await res.json();
+        setComments(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch comments:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchComments();
+  }, [fetchComments]);
+
+  async function handleNewComment(c: {
     type: "text" | "video";
     text_content?: string;
     video_url?: string;
     parent_comment_id?: string | null;
     timestamp_seconds?: number | null;
   }) {
-    const newComment: Comment = {
-      id: Date.now().toString(),
-      video_id: "dQw4w9WgXcQ",
-      parent_comment_id: c.parent_comment_id ?? null,
-      author_id: "current-user",
-      type: c.type,
-      text_content: c.text_content ?? null,
-      video_url: c.video_url ?? null,
-      timestamp_seconds: c.timestamp_seconds ?? null,
-      created_at: new Date().toISOString(),
-      likes_count: 0,
-      author: {
-        id: "current-user",
-        username: "you",
-        avatar_url: "",
-        created_at: "",
-      },
-    };
-    setComments((prev) => [...prev, newComment]);
+    try {
+      const res = await fetch("/api/comments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          video_id: VIDEO_ID,
+          type: c.type,
+          text_content: c.text_content ?? null,
+          video_url: c.video_url ?? null,
+          parent_comment_id: c.parent_comment_id ?? null,
+          timestamp_seconds: c.timestamp_seconds ?? null,
+        }),
+      });
+
+      if (res.ok) {
+        await fetchComments();
+      }
+    } catch (err) {
+      console.error("Failed to post comment:", err);
+    }
   }
 
   return (
@@ -229,22 +217,31 @@ export default function WatchPage() {
             Comments · {comments.length}
           </h2>
           <CommentComposer
-            videoId="dQw4w9WgXcQ"
+            videoId={VIDEO_ID}
             currentTimestamp={currentTimestamp}
             onSubmit={handleNewComment}
           />
 
-          <div className="mt-4 divide-y divide-gray-100">
-            {tree.map((comment) => (
-              <CommentItem
-                key={comment.id}
-                comment={comment}
-                onReply={(parentId) =>
-                  console.log("Reply to", parentId)
-                }
-              />
-            ))}
-          </div>
+          {loading ? (
+            <p className="mt-4 text-sm text-gray-500">Loading comments...</p>
+          ) : (
+            <div className="mt-4 divide-y divide-gray-100">
+              {tree.map((comment) => (
+                <CommentItem
+                  key={comment.id}
+                  comment={comment}
+                  onSubmit={handleNewComment}
+                  onReply={(parentId) =>
+                    handleNewComment({
+                      type: "text",
+                      text_content: "",
+                      parent_comment_id: parentId,
+                    })
+                  }
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
