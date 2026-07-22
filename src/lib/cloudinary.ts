@@ -3,11 +3,18 @@ export async function uploadVideoComment(
   onProgress?: (percent: number) => void
 ): Promise<string> {
   return new Promise((resolve, reject) => {
+    const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+    if (!cloudName) {
+      reject(new Error("Cloudinary not configured"));
+      return;
+    }
+
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("upload_preset", "video_comments");
 
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/upload/video-comment");
+    xhr.open("POST", `https://api.cloudinary.com/v1_/${cloudName}/video/upload`);
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) {
@@ -19,15 +26,15 @@ export async function uploadVideoComment(
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const data = JSON.parse(xhr.responseText);
-          resolve(data.url);
+          resolve(data.secure_url);
         } catch {
-          reject(new Error("Invalid response from server"));
+          reject(new Error("Invalid response from Cloudinary"));
         }
       } else {
         let message = `Upload failed (${xhr.status})`;
         try {
           const data = JSON.parse(xhr.responseText);
-          message = data.error ?? message;
+          message = data.error?.message ?? message;
         } catch {}
         reject(new Error(message));
       }
