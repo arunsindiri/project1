@@ -159,7 +159,7 @@ export default function WatchPage() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const tree = buildTree(comments);
-  const [currentTimestamp] = useState<number | null>(30);
+
 
   const [playerReady, setPlayerReady] = useState(false);
   const [seekTo, setSeekTo] = useState<((seconds: number) => void) | null>(null);
@@ -302,7 +302,7 @@ export default function WatchPage() {
           </h2>
           <CommentComposer
             videoId={VIDEO_ID}
-            currentTimestamp={currentTimestamp}
+            currentTimestamp={currentTime}
             onSubmit={handleNewComment}
           />
 
