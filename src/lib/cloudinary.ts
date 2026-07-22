@@ -21,8 +21,12 @@ export async function uploadVideoComment(
 
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        const data = JSON.parse(xhr.responseText);
-        resolve(data.secure_url);
+        try {
+          const data = JSON.parse(xhr.responseText);
+          resolve(data.secure_url);
+        } catch {
+          reject(new Error("Invalid response from Cloudinary"));
+        }
       } else {
         let message = `Upload failed (${xhr.status})`;
         try {
@@ -33,7 +37,8 @@ export async function uploadVideoComment(
       }
     };
 
-    xhr.onerror = () => reject(new Error("Network error during upload"));
+    xhr.onerror = () => reject(new Error("Network error — check your connection or Cloudinary upload preset"));
+    xhr.ontimeout = () => reject(new Error("Upload timed out"));
     xhr.send(formData);
   });
 }
