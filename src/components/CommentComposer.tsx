@@ -28,6 +28,8 @@ export default function CommentComposer({
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoPreview, setVideoPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const [useTimestamp, setUseTimestamp] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -157,10 +159,12 @@ export default function CommentComposer({
     if (mode === "video" && !blob) return;
 
     setUploading(true);
+    setError(null);
+    setUploadProgress(0);
 
     try {
       if (mode === "video" && blob) {
-        const videoUrl = await uploadVideoComment(blob);
+        const videoUrl = await uploadVideoComment(blob, setUploadProgress);
         await onSubmit({
           type: "video",
           video_url: videoUrl,
@@ -182,6 +186,7 @@ export default function CommentComposer({
       setUseTimestamp(false);
     } catch (err) {
       console.error("Failed to post comment:", err);
+      setError(err instanceof Error ? err.message : "Failed to post comment. Please try again.");
     } finally {
       setUploading(false);
     }
@@ -396,6 +401,27 @@ export default function CommentComposer({
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+          {error}
+        </div>
+      )}
+
+      {uploading && mode === "video" && (
+        <div className="mt-3">
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <span>Uploading video...</span>
+            <span>{uploadProgress}%</span>
+          </div>
+          <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+            <div
+              className="h-full rounded-full bg-blue-600 transition-all duration-300"
+              style={{ width: `${uploadProgress}%` }}
+            />
+          </div>
         </div>
       )}
 

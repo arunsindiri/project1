@@ -385,10 +385,6 @@ src/
 │       │   └── [id]/
 │       │       └── like/
 │       │           └── route.ts  # POST like a comment
-│       │
-│       └── upload/
-│           └── video-comment/
-│               └── route.ts      # POST upload a video comment clip
 │
 ├── components/                   # Reusable UI pieces
 │   ├── VideoPlayer.tsx           # YouTube embed player
@@ -469,7 +465,6 @@ User visits Home (/)
 | `/api/videos/:id/comments` | GET | Get threaded comments for a video |
 | `/api/comments` | POST | Create a comment (text or video) |
 | `/api/comments/:id/like` | POST | Like a comment |
-| `/api/upload/video-comment` | POST | Upload a video comment clip |
 
 ### Lib (`src/lib/`)
 | File | Purpose |
@@ -586,7 +581,7 @@ The app compiles and runs locally (`npm run dev`) and is deployed on **Vercel** 
 | Page | Path | What Works |
 |------|------|-----------|
 | Home | `/` | 3 demo YouTube video cards in a grid, each links to the watch page |
-| Watch | `/watch` | YouTube player with seek control, custom scrubber bar with timestamp markers, threaded comments, reply-to-replies, video comments (upload or record), timestamp badges (click to seek) |
+| Watch | `/watch` | YouTube player with seek control, custom scrubber bar with timestamp markers, threaded comments, reply-to-replies, video comments (upload or record with progress bar), timestamp badges (click to seek), error feedback on failures |
 | Auth | `/auth` | Empty |
 | Search | `/search` | Empty |
 | Channel | `/channel` | Empty |
@@ -622,7 +617,8 @@ Now that comments work fully end-to-end (post, fetch, persist on refresh), we'll
 4. ~~Phase 3.5~~ — Comment display bug fixes ✅ (GET filtering, optimistic updates, Vercel caching, Supabase JS client bypass)
 5. ~~Phase 3.6~~ — Vercel deployment ✅ (env vars, build fixes, cache control)
 6. ~~Phase 4~~ — Timestamp comments with scrubber markers ✅ (including float-to-integer fix)
-7. **Phase 5** — Auth page (Supabase Auth — sign up / log in)
+7. ~~Phase 4.5~~ — Video upload improvements ✅ (reply timestamp support, error feedback, progress bar, dead route cleanup)
+8. **Phase 5** — Auth page (Supabase Auth — sign up / log in)
 8. **Phase 6** — Search page and Channel page
 9. **Phase 7** — Polish and responsive design
 
@@ -688,6 +684,101 @@ invalid input syntax for type integer: "78.35895"
 
 ```typescript
 timestamp_seconds: timestamp_seconds != null ? Math.floor(timestamp_seconds) : null,
+```
+
+---
+
+### Step 5: Video Upload Improvements
+
+Four fixes to the video comment upload system:
+
+#### 5.1: Fixed reply comments missing timestamp pin support
+
+**The problem:** When replying to a comment, the `CommentComposer` in the reply box didn't receive `currentTimestamp`, so the "Pin to timestamp" checkbox was available but the timestamp value was always `null`.
+
+**The fix:** Added `currentTimestamp` prop to `CommentItem` and passed it through to the reply `CommentComposer` and recursive child comments.
+
+```typescript
+// CommentItem now receives currentTimestamp
+function CommentItem({ comment, onSubmit, seekTo, currentTimestamp }) {
+  // ...
+  <CommentComposer
+    videoId={comment.video_id}
+    parentId={comment.id}
+    currentTimestamp={currentTimestamp}  // ← added
+    onSubmit={...}
+  />
+}
+```
+
+#### 5.2: Added error feedback to users
+
+**The problem:** Upload failures and comment post errors were only logged to `console.error` — the user saw nothing.
+
+**The fix:**
+- `CommentComposer` now shows a red error banner when upload or post fails
+- `cloudinary.ts` surfaces Cloudinary's actual error message instead of generic "Upload failed"
+- `handleNewComment` in the watch page throws errors so `CommentComposer` can catch and display them
+
+```typescript
+// cloudinary.ts — better error messages
+if (!res.ok) {
+  const data = await res.json().catch(() => ({}));
+  throw new Error(data.error?.message ?? `Upload failed (${res.status})`);
+}
+
+// CommentComposer — error state + display
+const [error, setError] = useState<string | null>(null);
+// ...
+{error && (
+  <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+    {error}
+  </div>
+)}
+```
+
+#### 5.3: Removed dead server-side upload route
+
+Deleted `/api/upload/video-comment/route.ts` — it was never called by the UI and had an incomplete implementation (read `CLOUDINARY_API_SECRET` but never used it for signed uploads).
+
+#### 5.4: Added upload progress indicator
+
+**The problem:** During video upload, users only saw "Posting..." with no progress indication.
+
+**The fix:** Changed `uploadVideoComment` from `fetch` to `XMLHttpRequest` to get upload progress events, and added a blue progress bar to `CommentComposer`.
+
+```typescript
+// cloudinary.ts — progress callback
+export async function uploadVideoComment(
+  file: File,
+  onProgress?: (percent: number) => void
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+    // ...
+  });
+}
+
+// CommentComposer — progress bar UI
+{uploading && mode === "video" && (
+  <div className="mt-3">
+    <div className="flex items-center justify-between text-xs text-gray-500">
+      <span>Uploading video...</span>
+      <span>{uploadProgress}%</span>
+    </div>
+    <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+      <div
+        className="h-full rounded-full bg-blue-600 transition-all duration-300"
+        style={{ width: `${uploadProgress}%` }}
+      />
+    </div>
+  </div>
+)}
 ```
 
 ---

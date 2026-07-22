@@ -10,6 +10,7 @@ function CommentItem({
   comment,
   onSubmit,
   seekTo,
+  currentTimestamp,
 }: {
   comment: Comment;
   onSubmit: (c: {
@@ -20,6 +21,7 @@ function CommentItem({
     timestamp_seconds?: number | null;
   }) => void;
   seekTo: (seconds: number) => void;
+  currentTimestamp: number;
 }) {
   const [showReplyBox, setShowReplyBox] = useState(false);
   const [showReplies, setShowReplies] = useState(true);
@@ -94,6 +96,7 @@ function CommentItem({
               <CommentComposer
                 videoId={comment.video_id}
                 parentId={comment.id}
+                currentTimestamp={currentTimestamp}
                 onSubmit={(c) => {
                   onSubmit(c);
                   setShowReplyBox(false);
@@ -122,6 +125,7 @@ function CommentItem({
               comment={reply}
               onSubmit={onSubmit}
               seekTo={seekTo}
+              currentTimestamp={currentTimestamp}
             />
           ))}
         </div>
@@ -219,31 +223,26 @@ export default function WatchPage() {
     parent_comment_id?: string | null;
     timestamp_seconds?: number | null;
   }) {
-    try {
-      const res = await fetch("/api/comments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          video_id: VIDEO_ID,
-          type: c.type,
-          text_content: c.text_content ?? null,
-          video_url: c.video_url ?? null,
-          parent_comment_id: c.parent_comment_id ?? null,
-          timestamp_seconds: c.timestamp_seconds ?? null,
-        }),
-      });
+    const res = await fetch("/api/comments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        video_id: VIDEO_ID,
+        type: c.type,
+        text_content: c.text_content ?? null,
+        video_url: c.video_url ?? null,
+        parent_comment_id: c.parent_comment_id ?? null,
+        timestamp_seconds: c.timestamp_seconds ?? null,
+      }),
+    });
 
-      const data = await res.json();
-      console.log("POST /api/comments:", res.status, data);
+    const data = await res.json();
 
-      if (res.ok) {
-        setComments((prev) => [...prev, data]);
-      } else {
-        console.error("Comment failed:", data);
-      }
-    } catch (err) {
-      console.error("Failed to post comment:", err);
+    if (!res.ok) {
+      throw new Error(data.error ?? "Failed to post comment");
     }
+
+    setComments((prev) => [...prev, data]);
   }
 
   function handleSeekTo(seconds: number) {
@@ -316,6 +315,7 @@ export default function WatchPage() {
                   comment={comment}
                   onSubmit={handleNewComment}
                   seekTo={handleSeekTo}
+                  currentTimestamp={currentTime}
                 />
               ))}
             </div>
