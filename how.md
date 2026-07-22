@@ -621,7 +621,7 @@ Now that comments work fully end-to-end (post, fetch, persist on refresh), we'll
 3. ~~Phase 3~~ — Video comments ✅ (upload + camera recording)
 4. ~~Phase 3.5~~ — Comment display bug fixes ✅ (GET filtering, optimistic updates, Vercel caching, Supabase JS client bypass)
 5. ~~Phase 3.6~~ — Vercel deployment ✅ (env vars, build fixes, cache control)
-6. ~~Phase 4~~ — Timestamp comments with scrubber markers ✅
+6. ~~Phase 4~~ — Timestamp comments with scrubber markers ✅ (including float-to-integer fix)
 7. **Phase 5** — Auth page (Supabase Auth — sign up / log in)
 8. **Phase 6** — Search page and Channel page
 9. **Phase 7** — Polish and responsive design
@@ -673,3 +673,21 @@ Built the full timestamp comment system so users can anchor comments to a specif
 6. Clicking a dot on the scrubber → `player.seekTo(seconds)` → video jumps to that time
 7. Clicking a timestamp badge on a comment → same thing, seeks video to that time
 8. The red progress bar updates in real-time as the video plays
+
+### Step 4.1: Fixed timestamp_seconds — float to integer
+
+When posting a comment with "Pin to timestamp" checked, the POST returned a 500 error:
+
+```
+invalid input syntax for type integer: "78.35895"
+```
+
+**The problem:** YouTube's `getCurrentTime()` returns a float (e.g., `78.35895`), but the Supabase `comments` table has `timestamp_seconds` as `integer`. Supabase rejected the float value.
+
+**The fix:** Added `Math.floor()` in `src/app/api/comments/route.ts` before inserting into Supabase:
+
+```typescript
+timestamp_seconds: timestamp_seconds != null ? Math.floor(timestamp_seconds) : null,
+```
+
+---
