@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
       type,
       text_content,
       video_url,
-      timestamp_seconds,
+      timestamp_seconds: timestamp_seconds != null ? Math.floor(timestamp_seconds) : null,
     })
     .select()
     .single();
