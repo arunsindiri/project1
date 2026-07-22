@@ -1,16 +1,17 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import VideoPlayer from "@/components/VideoPlayer";
+import TimestampMarker from "@/components/TimestampMarker";
 import CommentComposer from "@/components/CommentComposer";
 import type { Comment } from "@/types";
 
 function CommentItem({
   comment,
-  onReply,
   onSubmit,
+  seekTo,
 }: {
   comment: Comment;
-  onReply: (parentId: string) => void;
   onSubmit: (c: {
     type: "text" | "video";
     text_content?: string;
@@ -18,6 +19,7 @@ function CommentItem({
     parent_comment_id?: string | null;
     timestamp_seconds?: number | null;
   }) => void;
+  seekTo: (seconds: number) => void;
 }) {
   const [showReplyBox, setShowReplyBox] = useState(false);
   const [showReplies, setShowReplies] = useState(true);
@@ -37,13 +39,16 @@ function CommentItem({
               {new Date(comment.created_at).toLocaleDateString()}
             </span>
             {comment.timestamp_seconds != null && (
-              <span className="cursor-pointer rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-600 hover:bg-blue-100">
+              <button
+                onClick={() => seekTo(comment.timestamp_seconds!)}
+                className="cursor-pointer rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-600 hover:bg-blue-100"
+              >
                 {Math.floor(comment.timestamp_seconds / 60)}:
                 {String(Math.floor(comment.timestamp_seconds % 60)).padStart(
                   2,
                   "0"
                 )}
-              </span>
+              </button>
             )}
           </div>
 
@@ -112,7 +117,12 @@ function CommentItem({
       {hasReplies && showReplies && (
         <div className="ml-12 border-l-2 border-gray-100 pl-4">
           {comment.replies!.map((reply) => (
-            <CommentItem key={reply.id} comment={reply} onReply={onReply} onSubmit={onSubmit} />
+            <CommentItem
+              key={reply.id}
+              comment={reply}
+              onSubmit={onSubmit}
+              seekTo={seekTo}
+            />
           ))}
         </div>
       )}
@@ -137,6 +147,12 @@ function buildTree(comments: Comment[]): Comment[] {
   return roots;
 }
 
+function formatTime(seconds: number) {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 const VIDEO_ID = "dQw4w9WgXcQ";
 
 export default function WatchPage() {
@@ -144,6 +160,37 @@ export default function WatchPage() {
   const [loading, setLoading] = useState(true);
   const tree = buildTree(comments);
   const [currentTimestamp] = useState<number | null>(30);
+
+  const [playerReady, setPlayerReady] = useState(false);
+  const [seekTo, setSeekTo] = useState<((seconds: number) => void) | null>(null);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const seekToRef = useRef<((seconds: number) => void) | null>(null);
+
+  const handlePlayerReady = useCallback(
+    (player: {
+      seekTo: (seconds: number) => void;
+      getCurrentTime: () => number;
+      getDuration: () => number;
+      onTimeUpdate: (callback: (time: number) => void) => void;
+    }) => {
+      setPlayerReady(true);
+      setSeekTo(() => player.seekTo);
+      seekToRef.current = player.seekTo;
+
+      const updateTime = (time: number) => setCurrentTime(time);
+      player.onTimeUpdate(updateTime);
+
+      const pollDuration = setInterval(() => {
+        const d = player.getDuration();
+        if (d > 0) {
+          setDuration(d);
+          clearInterval(pollDuration);
+        }
+      }, 500);
+    },
+    []
+  );
 
   const fetchComments = useCallback(async () => {
     try {
@@ -199,22 +246,52 @@ export default function WatchPage() {
     }
   }
 
+  function handleSeekTo(seconds: number) {
+    if (seekToRef.current) {
+      seekToRef.current(seconds);
+    }
+  }
+
+  const timestampComments = comments.filter(
+    (c) => c.timestamp_seconds != null && c.parent_comment_id === null
+  );
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="mx-auto max-w-4xl px-4 py-6">
-        <div className="aspect-video w-full rounded-xl bg-black">
-          <iframe
-            width="100%"
-            height="100%"
-            src="https://www.youtube.com/embed/dQw4w9WgXcQ"
-            title="Video Player"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-            className="rounded-xl"
-          />
-        </div>
+        <VideoPlayer videoId={VIDEO_ID} onPlayerReady={handlePlayerReady} />
 
-        <div className="mt-4">
+        {playerReady && duration > 0 && (
+          <div className="relative mt-2 h-6 w-full select-none">
+            <div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-gray-200">
+              <div
+                className="h-full rounded-full bg-red-500 transition-all duration-200"
+                style={{
+                  width: `${(currentTime / duration) * 100}%`,
+                }}
+              />
+            </div>
+
+            <div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2">
+              {timestampComments.map((c) => (
+                <TimestampMarker
+                  key={c.id}
+                  seconds={c.timestamp_seconds!}
+                  duration={duration}
+                  commentText={c.text_content ?? undefined}
+                  onClick={handleSeekTo}
+                />
+              ))}
+            </div>
+
+            <div className="absolute inset-x-0 -bottom-3 flex justify-between text-[10px] text-gray-400">
+              <span>{formatTime(currentTime)}</span>
+              <span>{formatTime(duration)}</span>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-6">
           <h1 className="text-xl font-semibold">Demo Video Title</h1>
           <p className="mt-1 text-sm text-gray-500">1,234 views · Jul 20, 2026</p>
         </div>
@@ -238,13 +315,7 @@ export default function WatchPage() {
                   key={comment.id}
                   comment={comment}
                   onSubmit={handleNewComment}
-                  onReply={(parentId) =>
-                    handleNewComment({
-                      type: "text",
-                      text_content: "",
-                      parent_comment_id: parentId,
-                    })
-                  }
+                  seekTo={handleSeekTo}
                 />
               ))}
             </div>

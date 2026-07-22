@@ -586,7 +586,7 @@ The app compiles and runs locally (`npm run dev`) and is deployed on **Vercel** 
 | Page | Path | What Works |
 |------|------|-----------|
 | Home | `/` | 3 demo YouTube video cards in a grid, each links to the watch page |
-| Watch | `/watch` | YouTube iframe embed, threaded comments (stored in Supabase), reply UI, like button, video comments (upload or record via camera), timestamp badges |
+| Watch | `/watch` | YouTube player with seek control, custom scrubber bar with timestamp markers, threaded comments, reply-to-replies, video comments (upload or record), timestamp badges (click to seek) |
 | Auth | `/auth` | Empty |
 | Search | `/search` | Empty |
 | Channel | `/channel` | Empty |
@@ -621,7 +621,55 @@ Now that comments work fully end-to-end (post, fetch, persist on refresh), we'll
 3. ~~Phase 3~~ — Video comments ✅ (upload + camera recording)
 4. ~~Phase 3.5~~ — Comment display bug fixes ✅ (GET filtering, optimistic updates, Vercel caching, Supabase JS client bypass)
 5. ~~Phase 3.6~~ — Vercel deployment ✅ (env vars, build fixes, cache control)
-6. **Phase 4** — Timestamp comments with scrubber markers
+6. ~~Phase 4~~ — Timestamp comments with scrubber markers ✅
 7. **Phase 5** — Auth page (Supabase Auth — sign up / log in)
 8. **Phase 6** — Search page and Channel page
 9. **Phase 7** — Polish and responsive design
+
+---
+
+### Step 4: Timestamp Comments with Scrubber Markers
+
+Built the full timestamp comment system so users can anchor comments to a specific second in the video, see markers on a scrubber bar, and click-to-seek.
+
+#### What was built:
+
+**1. `src/hooks/useYouTubePlayer.ts`** — React hook wrapping the YouTube IFrame Player API
+
+- Loads the YouTube IFrame API script dynamically
+- Creates a `YT.Player` instance attached to a div container
+- Exposes: `seekTo(seconds)`, `getCurrentTime()`, `getDuration()`
+- Polls current time every 250ms and notifies listeners via `onTimeUpdate` callback
+- Returns `playerReady` state so components know when the API is loaded
+
+**2. `src/components/VideoPlayer.tsx`** — Controllable YouTube player
+
+- Replaces the old raw `<iframe>` embed with a proper `YT.Player` instance
+- Calls `onPlayerReady` with the player controls when the API loads
+- The parent page gains access to `seekTo`, `getCurrentTime`, `getDuration`
+
+**3. `src/components/TimestampMarker.tsx`** — Dot marker for the scrubber
+
+- Renders a blue dot positioned at `(seconds / duration) * 100)%` on the timeline
+- On click, calls `seekTo(seconds)` to jump the video to that timestamp
+- Hover shows a tooltip with the time and comment text
+- Scales up on hover for easy clicking
+
+**4. Updated `src/app/watch/page.tsx`** — Custom timeline + click-to-seek
+
+- Custom scrubber bar below the video with a red progress indicator
+- Filters top-level comments with `timestamp_seconds` and renders `TimestampMarker` dots on the scrubber
+- Timestamp badges on comments are now clickable buttons — clicking seeks the video to that time
+- `seekTo` is passed through `CommentItem` recursively so nested replies with timestamps also seek
+- Current time and duration displayed at the edges of the scrubber
+
+#### How timestamp comments work end-to-end:
+
+1. User watches video, clicks "Pin to timestamp" checkbox in CommentComposer
+2. CommentComposer captures the current video time and includes `timestamp_seconds` in the POST
+3. Supabase stores the comment with `timestamp_seconds` set
+4. On page load, GET returns all comments including timestamp data
+5. Watch page filters top-level comments with timestamps and renders blue dots on the custom scrubber bar
+6. Clicking a dot on the scrubber → `player.seekTo(seconds)` → video jumps to that time
+7. Clicking a timestamp badge on a comment → same thing, seeks video to that time
+8. The red progress bar updates in real-time as the video plays
