@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "app/api/upload/video-comment/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}

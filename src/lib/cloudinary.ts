@@ -14,11 +14,20 @@ export async function uploadVideoComment(
 
   if (onProgress) onProgress(100);
 
-  const data = await res.json();
+  const text = await res.text();
 
-  if (!res.ok) {
-    throw new Error(data.error ?? "Upload failed");
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error("Server returned an invalid response. Please try again.");
   }
 
-  return data.url;
+  if (!res.ok) {
+    throw new Error(
+      typeof data.error === "string" ? data.error : "Upload failed"
+    );
+  }
+
+  return data.url as string;
 }
