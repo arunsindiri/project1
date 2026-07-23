@@ -2,46 +2,23 @@ export async function uploadVideoComment(
   file: File,
   onProgress?: (percent: number) => void
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-    if (!cloudName) {
-      reject(new Error("Cloudinary not configured"));
-      return;
-    }
+  if (onProgress) onProgress(0);
 
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("upload_preset", "video_comments");
+  const formData = new FormData();
+  formData.append("file", file);
 
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `https://api.cloudinary.com/v1_/${cloudName}/video/upload`);
-
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable && onProgress) {
-        onProgress(Math.round((e.loaded / e.total) * 100));
-      }
-    };
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const data = JSON.parse(xhr.responseText);
-          resolve(data.secure_url);
-        } catch {
-          reject(new Error("Invalid response from Cloudinary"));
-        }
-      } else {
-        let message = `Upload failed (${xhr.status})`;
-        try {
-          const data = JSON.parse(xhr.responseText);
-          message = data.error?.message ?? message;
-        } catch {}
-        reject(new Error(message));
-      }
-    };
-
-    xhr.onerror = () => reject(new Error("Network error — please try again"));
-    xhr.ontimeout = () => reject(new Error("Upload timed out"));
-    xhr.send(formData);
+  const res = await fetch("/api/upload/video-comment", {
+    method: "POST",
+    body: formData,
   });
+
+  if (onProgress) onProgress(100);
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error(data.error ?? "Upload failed");
+  }
+
+  return data.url;
 }

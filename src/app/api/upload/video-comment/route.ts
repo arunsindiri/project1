@@ -25,8 +25,6 @@ export async function POST(req: NextRequest) {
     uploadForm.append("file", new Blob([buffer], { type: file.type }), file.name);
     uploadForm.append("upload_preset", "video_comments");
 
-    console.log(`Uploading ${file.name} (${file.type}, ${buffer.length} bytes) to Cloudinary...`);
-
     const res = await fetch(
       `https://api.cloudinary.com/v1_/${cloudName}/video/upload`,
       { method: "POST", body: uploadForm }
@@ -42,7 +40,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log("Upload success:", data.secure_url);
     return NextResponse.json({ url: data.secure_url });
   } catch (err) {
     console.error("Upload route error:", err);

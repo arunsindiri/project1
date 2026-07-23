@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { uploadVideoComment } from "@/lib/cloudinary";
 
 interface CommentComposerProps {
@@ -37,6 +37,7 @@ export default function CommentComposer({
   const [isRecording, setIsRecording] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const [recordingPreviewUrl, setRecordingPreviewUrl] = useState<string | null>(null);
   const [recordingTime, setRecordingTime] = useState(0);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -75,6 +76,8 @@ export default function CommentComposer({
   }
 
   function handleRemoveRecording() {
+    if (recordingPreviewUrl) URL.revokeObjectURL(recordingPreviewUrl);
+    setRecordingPreviewUrl(null);
     setRecordedBlob(null);
     setIsPreviewing(false);
     setRecordingTime(0);
@@ -107,6 +110,7 @@ export default function CommentComposer({
       recorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: "video/webm" });
         setRecordedBlob(blob);
+        setRecordingPreviewUrl(URL.createObjectURL(blob));
         setIsPreviewing(true);
         stopCamera();
       };
@@ -143,7 +147,7 @@ export default function CommentComposer({
     return `${m}:${String(s).padStart(2, "0")}`;
   }
 
-  function getVideoBlob(): File | null {
+  const videoBlob = useMemo(() => {
     if (videoSource === "upload" && videoFile) return videoFile;
     if (videoSource === "record" && recordedBlob) {
       return new File([recordedBlob], `recording-${Date.now()}.webm`, {
@@ -151,20 +155,19 @@ export default function CommentComposer({
       });
     }
     return null;
-  }
+  }, [videoSource, videoFile, recordedBlob]);
 
   async function handleSubmit() {
     if (mode === "text" && !text.trim()) return;
-    const blob = getVideoBlob();
-    if (mode === "video" && !blob) return;
+    if (mode === "video" && !videoBlob) return;
 
     setUploading(true);
     setError(null);
     setUploadProgress(0);
 
     try {
-      if (mode === "video" && blob) {
-        const videoUrl = await uploadVideoComment(blob, setUploadProgress);
+      if (mode === "video" && videoBlob) {
+        const videoUrl = await uploadVideoComment(videoBlob, setUploadProgress);
         await onSubmit({
           type: "video",
           video_url: videoUrl,
@@ -350,7 +353,7 @@ export default function CommentComposer({
               {isPreviewing && recordedBlob && (
                 <div className="relative w-full">
                   <video
-                    src={URL.createObjectURL(recordedBlob)}
+                    src={recordingPreviewUrl ?? ""}
                     controls
                     className="w-full rounded-lg"
                   />
@@ -447,7 +450,7 @@ export default function CommentComposer({
           disabled={
             uploading ||
             (mode === "text" && !text.trim()) ||
-            (mode === "video" && !getVideoBlob())
+            (mode === "video" && !videoBlob)
           }
           className="rounded-full bg-blue-600 px-5 py-1.5 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
         >
