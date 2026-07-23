@@ -53,12 +53,28 @@ export async function POST(req: NextRequest) {
     }
     clearTimeout(timeout);
 
-    const data = await res.json();
+    const rawText = await res.text();
 
     if (!res.ok) {
-      console.error("Cloudinary error:", res.status, JSON.stringify(data));
+      console.error("Cloudinary error:", res.status, rawText.slice(0, 500));
+      let message = `Upload failed (${res.status})`;
+      try {
+        const parsed = JSON.parse(rawText);
+        message = parsed.error?.message ?? message;
+      } catch {}
       return NextResponse.json(
-        { error: data.error?.message ?? `Upload failed (${res.status})` },
+        { error: message },
+        { status: 502 }
+      );
+    }
+
+    let data: { secure_url?: string };
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      console.error("Cloudinary returned non-JSON:", rawText.slice(0, 200));
+      return NextResponse.json(
+        { error: "Cloudinary returned an invalid response" },
         { status: 502 }
       );
     }
