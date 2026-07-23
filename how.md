@@ -591,19 +591,22 @@ The app compiles and runs locally (`npm run dev`) and is deployed on **Vercel** 
 - **POST:** Type a comment, click "Comment" → instantly appears in the comment list (optimistic update) AND saves to Supabase
 - **GET:** On page load, all comments for the video are fetched from Supabase and displayed as a threaded tree
 - **Persistence:** Comments survive page refresh — confirmed working
-- **Video clips:** Uploaded to Cloudinary, URL stored in Supabase alongside the comment
+- **Video clips:** Uploaded to Cloudinary via server-side SDK (no CORS issues), URL stored in Supabase alongside the comment
 
 **Supabase project:** `https://axjknecyakbvzxaslvci.supabase.co`
 **Vercel deployment:** `https://vidtalk.6281401.xyz`
 **GitHub repo:** `github.com:arunsindiri/project1.git`
 
-**Test comments stored:** 21+ test comments exist for video `dQw4w9WgXcQ` in the Supabase `comments` table.
+**Test comments stored:** 34+ comments exist for video `dQw4w9WgXcQ` in the Supabase `comments` table.
 
 **Key debugging lessons learned:**
 - Supabase JS client `.eq()` filter can silently return fewer rows on serverless runtimes — bypass with direct REST API fetch
 - Vercel caches GET responses by default — use `force-dynamic` and `Cache-Control: no-store` headers
 - Always `await` async callbacks in React event handlers — otherwise errors are swallowed silently
 - Supabase client initialization must be lazy (function, not top-level) to avoid build-time crashes on Vercel
+- Vercel's Node.js runtime doesn't properly serialize `File` objects in `FormData` when proxying to third-party APIs — use the official SDK instead
+- GitHub Pages is incompatible with Next.js API routes — don't mix static export with dynamic routes
+- Cloudinary unsigned uploads work from server-side but are blocked by CORS from browsers without dashboard configuration
 
 ---
 
@@ -618,9 +621,10 @@ Now that comments work fully end-to-end (post, fetch, persist on refresh), we'll
 5. ~~Phase 3.6~~ — Vercel deployment ✅ (env vars, build fixes, cache control)
 6. ~~Phase 4~~ — Timestamp comments with scrubber markers ✅ (including float-to-integer fix)
 7. ~~Phase 4.5~~ — Video upload improvements ✅ (reply timestamp support, error feedback, progress bar, dead route cleanup)
-8. **Phase 5** — Auth page (Supabase Auth — sign up / log in)
-8. **Phase 6** — Search page and Channel page
-9. **Phase 7** — Polish and responsive design
+8. ~~Phase 5~~ — Video upload pipeline hardened ✅ (CORS fix, Cloudinary SDK, server-side proxy, code quality bugs)
+9. **Phase 6** — Auth page (Supabase Auth — sign up / log in)
+10. **Phase 7** — Search page and Channel page
+11. **Phase 8** — Polish and responsive design
 
 ---
 
@@ -779,6 +783,163 @@ export async function uploadVideoComment(
     </div>
   </div>
 )}
+```
+
+---
+
+### Step 6: Tested Video Upload End-to-End
+
+Ran a full diagnostic of the video upload comment pipeline to verify it works:
+
+1. **Cloudinary upload preset** — Confirmed `video_comments` unsigned preset exists (tested with curl, got `secure_url` back)
+2. **POST `/api/comments`** with `type: "video"` — Successfully inserted a video comment into Supabase with `video_url` and `timestamp_seconds`
+3. **GET `/api/videos/:id/comments`** — Returned the video comment with correct `video_url` and `timestamp_seconds`
+4. **Cloudinary URL accessibility** — HTTP 200, `video/mp4`, served from Cloudinary CDN with CORS headers
+
+**Result:** The pipeline works end-to-end. Cloudinary stores the video file, Supabase stores the URL reference.
+
+---
+
+### Step 7: Fixed 3 Code Quality Bugs
+
+Found and fixed three bugs in the video upload code:
+
+#### 7.1: XHR timeout never fires (`src/lib/cloudinary.ts`)
+
+**The problem:** The `XMLHttpRequest` had an `ontimeout` handler but `xhr.timeout` was never set. Uploads could hang forever.
+
+**The fix:** Added `xhr.timeout = 120000` (2 minutes) before `xhr.send()`.
+
+#### 7.2: Object URL memory leak (`src/components/CommentComposer.tsx`)
+
+**The problem:** The recording preview video used `src={URL.createObjectURL(recordedBlob)}` directly in JSX, creating a new blob URL on every render and never revoking it. This leaked memory.
+
+**The fix:**
+- Added `recordingPreviewUrl` state to store the URL once when recording stops
+- `handleRemoveRecording()` now revokes the URL with `URL.revokeObjectURL()`
+- Preview video uses the stored `recordingPreviewUrl` instead of creating a new URL each render
+
+#### 7.3: `getVideoBlob()` created a new File on every render
+
+**The problem:** `getVideoBlob()` was a regular function called in the `disabled` prop of the submit button. In record-preview mode, it created a new `File` object with `Date.now()` in the name on every render cycle.
+
+**The fix:** Converted to `useMemo` → `videoBlob` that only recomputes when `videoSource`, `videoFile`, or `recordedBlob` changes.
+
+---
+
+### Step 8: Fixed CORS — Routed Uploads Through Server
+
+**The problem:** When testing in the browser, Cloudinary blocked the upload with:
+
+```
+CORS policy: Response to preflight request doesn't pass access control check:
+No 'Access-Control-Allow-Origin' header is present on the requested resource.
+```
+
+The browser sends a preflight `OPTIONS` request to `api.cloudinary.com`, and Cloudinary rejected it because `vidtalk.6281401.xyz` isn't whitelisted in the Cloudinary CORS settings.
+
+**The fix:** Changed `cloudinary.ts` to upload through the server-side API route (`/api/upload/video-comment`) instead of directly to Cloudinary from the browser. Server-to-server requests have no CORS restrictions.
+
+```typescript
+// Before (broken — blocked by CORS):
+xhr.open("POST", `https://api.cloudinary.com/v1_/${cloudName}/video/upload`);
+
+// After (works — server proxy, no CORS):
+const res = await fetch("/api/upload/video-comment", { method: "POST", body: formData });
+```
+
+**Trade-off:** Upload progress bar no longer shows a percentage (server can't stream upload progress back). Shows "Uploading..." without a percentage instead.
+
+---
+
+### Step 9: Fixed GitHub Actions Build Failure
+
+**The problem:** The GitHub Actions workflow (`nextjs.yml`) deployed to GitHub Pages, which requires `output: "export"` (static site). But the app has dynamic API routes (`/api/comments`, `/api/videos/[id]/comments`) that can't be statically exported:
+
+```
+Error: Page "/api/comments/[id]/like" is missing "generateStaticParams()"
+so it cannot be used with "output: export" config.
+```
+
+**The fix:** Deleted `.github/workflows/nextjs.yml` entirely. The app is deployed on **Vercel**, not GitHub Pages, so the workflow was unnecessary.
+
+---
+
+### Step 10: Fixed Vercel 500 Error — Server Upload Route Crashing
+
+After pushing the server-side proxy fix, video uploads still failed on Vercel with a 500 error. The server route returned HTML instead of JSON:
+
+```
+/api/upload/video-comment: Failed to load resource: the server responded with a status of 500
+Unexpected token '<', "<!DOCTYPE "... is not valid JSON
+```
+
+**Root cause:** Vercel's Node.js runtime doesn't properly serialize `File` objects in `FormData` when proxying to Cloudinary. The reconstructed `new Blob([buffer])` caused Cloudinary to return a 404 error page (HTML) instead of JSON.
+
+**The fix:** Installed the official `cloudinary` npm package and rewrote the upload route to use the SDK:
+
+```typescript
+import { v2 as cloudinary } from "cloudinary";
+
+cloudinary.config({
+  cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// Upload using data URI (works reliably on all runtimes)
+const arrayBuf = await file.arrayBuffer();
+const b64 = Buffer.from(arrayBuf).toString("base64");
+const dataUri = `data:${file.type};base64,${b64}`;
+
+const result = await cloudinary.uploader.upload(dataUri, {
+  resource_type: "video",
+  folder: "video_comments",
+});
+
+return NextResponse.json({ url: result.secure_url });
+```
+
+**Additional improvements:**
+- Added 55-second abort timeout on the Cloudinary upload (Vercel Hobby has function timeout limits)
+- Added 10MB file size validation with clear error message
+- Client now handles non-JSON responses gracefully instead of crashing
+- Added `vercel.json` with `maxDuration: 60` for the upload route
+
+---
+
+### Step 11: Cloudinary Storage Limits
+
+Video comments are stored on **Cloudinary** (not Supabase). Supabase only stores the URL reference.
+
+| Resource | Free Limit |
+|----------|-----------|
+| Storage | 10 GB total |
+| Single video file | 100 MB max |
+| Bandwidth | ~25 GB/month |
+| Monthly credits | 25 (1 credit = 1 GB) |
+
+At ~1-5 MB per short clip, the free tier supports roughly **2,000–10,000 video comments** before running out.
+
+---
+
+### Data Flow Summary (Video Comments)
+
+```
+Browser                    Vercel Server              Cloudinary           Supabase
+  |                            |                         |                    |
+  |-- POST /api/upload/  ----->|                         |                    |
+  |   (file as FormData)       |-- upload dataUri ----->|                    |
+  |                            |<-- secure_url ----------|                    |
+  |<-- { url } ---------------|                         |                    |
+  |                            |                         |                    |
+  |-- POST /api/comments ----->|                         |                    |
+  |   (video_url = url)        |-- INSERT comment ----->|                    |
+  |                            |<-- { id, ... } ---------|                    |
+  |<-- comment data -----------|                         |                    |
+  |                            |                         |                    |
+  | <video src={url}>          |                         |                    |
+  |   (plays from CDN)         |                         |                    |
 ```
 
 ---
