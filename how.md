@@ -624,7 +624,8 @@ Now that comments work fully end-to-end (post, fetch, persist on refresh), we'll
 8. ~~Phase 5~~ — Video upload pipeline hardened ✅ (CORS fix, Cloudinary SDK, server-side proxy, code quality bugs)
 9. **Phase 6** — Auth page (Supabase Auth — sign up / log in)
 10. **Phase 7** — Search page and Channel page
-11. **Phase 8** — Polish and responsive design
+11. **Phase 8** — Video compression (add `quality`, `width`, `codec` params to Cloudinary upload to reduce file size — saves storage & bandwidth credits)
+12. **Phase 9** — Polish and responsive design
 
 ---
 
