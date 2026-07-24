@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 import VideoPlayer from "@/components/VideoPlayer";
 import TimestampMarker from "@/components/TimestampMarker";
 import CommentComposer from "@/components/CommentComposer";
+import { useAuth } from "@/lib/auth-context";
 import type { Comment } from "@/types";
 
 function CommentItem({
@@ -160,6 +162,7 @@ function formatTime(seconds: number) {
 const VIDEO_ID = "dQw4w9WgXcQ";
 
 export default function WatchPage() {
+  const { user } = useAuth();
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const tree = buildTree(comments);
@@ -228,6 +231,7 @@ export default function WatchPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         video_id: VIDEO_ID,
+        author_id: user?.id ?? "anonymous",
         type: c.type,
         text_content: c.text_content ?? null,
         video_url: c.video_url ?? null,
@@ -299,11 +303,22 @@ export default function WatchPage() {
           <h2 className="mb-3 text-lg font-medium">
             Comments · {comments.length}
           </h2>
-          <CommentComposer
-            videoId={VIDEO_ID}
-            currentTimestamp={currentTime}
-            onSubmit={handleNewComment}
-          />
+          {user ? (
+            <CommentComposer
+              videoId={VIDEO_ID}
+              currentTimestamp={currentTime}
+              onSubmit={handleNewComment}
+            />
+          ) : (
+            <div className="rounded-lg border border-gray-200 bg-white p-4 text-center">
+              <p className="text-sm text-gray-500">
+                <Link href="/auth" className="font-medium text-blue-600 hover:text-blue-700">
+                  Sign in
+                </Link>{" "}
+                to leave a comment
+              </p>
+            </div>
+          )}
 
           {loading ? (
             <p className="mt-4 text-sm text-gray-500">Loading comments...</p>
