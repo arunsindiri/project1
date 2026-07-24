@@ -146,7 +146,18 @@ export default function CommentComposer({
       setRecordingTime(0);
 
       timerRef.current = setInterval(() => {
-        setRecordingTime((prev) => prev + 1);
+        setRecordingTime((prev) => {
+          if (prev + 1 >= 180) {
+            // Auto-stop at 3 minutes
+            if (mediaRecorderRef.current?.state === "recording") {
+              mediaRecorderRef.current.stop();
+            }
+            clearInterval(timerRef.current!);
+            timerRef.current = null;
+            return 180;
+          }
+          return prev + 1;
+        });
       }, 1000);
     } catch {
       setCameraError(
