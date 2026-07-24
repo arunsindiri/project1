@@ -935,7 +935,7 @@ Two client-requested changes to video comments:
 **The fix:** Added duration check in `CommentComposer.tsx` for both upload and recording:
 
 - **Upload:** When a file is selected, a temporary `<video>` element reads `duration`. If > 180 seconds, shows error and blocks the file.
-- **Recording:** When `MediaRecorder.onstop` fires, the recorded blob's duration is checked. If > 180 seconds, shows error and discards the recording.
+- **Recording:** When `MediaRecorder.onstop` fires, the recorded blob's duration is checked. If > 180 seconds, shows error and discards the recording. The timer also auto-stops recording at exactly 3 minutes (180s).
 - Updated hint text from "max 60s recommended" to "max 3 minutes".
 
 ```typescript
