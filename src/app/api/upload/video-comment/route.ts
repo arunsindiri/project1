@@ -32,6 +32,15 @@ export async function POST(req: NextRequest) {
     const result = await cloudinary.uploader.upload(dataUri, {
       resource_type: "video",
       folder: "video_comments",
+      transformation: [
+        {
+          quality: "auto",
+          width: 640,
+          height: 480,
+          crop: "limit",
+          codec: "h264",
+        },
+      ],
     });
 
     return NextResponse.json({ url: result.secure_url });

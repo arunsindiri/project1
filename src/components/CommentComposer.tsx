@@ -64,8 +64,20 @@ export default function CommentComposer({
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setVideoFile(file);
-    setVideoPreview(URL.createObjectURL(file));
+
+    // Check duration
+    const tempUrl = URL.createObjectURL(file);
+    const tempVideo = document.createElement("video");
+    tempVideo.src = tempUrl;
+    tempVideo.onloadedmetadata = () => {
+      URL.revokeObjectURL(tempUrl);
+      if (tempVideo.duration > 180) {
+        setError("Video must be under 3 minutes. Please choose a shorter clip.");
+        return;
+      }
+      setVideoFile(file);
+      setVideoPreview(URL.createObjectURL(file));
+    };
   }
 
   function handleRemoveVideo() {
@@ -109,10 +121,23 @@ export default function CommentComposer({
 
       recorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: "video/webm" });
-        setRecordedBlob(blob);
-        setRecordingPreviewUrl(URL.createObjectURL(blob));
-        setIsPreviewing(true);
-        stopCamera();
+
+        // Check duration
+        const tempUrl = URL.createObjectURL(blob);
+        const tempVideo = document.createElement("video");
+        tempVideo.src = tempUrl;
+        tempVideo.onloadedmetadata = () => {
+          URL.revokeObjectURL(tempUrl);
+          if (tempVideo.duration > 180) {
+            setError("Recording must be under 3 minutes. Please record a shorter clip.");
+            stopCamera();
+            return;
+          }
+          setRecordedBlob(blob);
+          setRecordingPreviewUrl(URL.createObjectURL(blob));
+          setIsPreviewing(true);
+          stopCamera();
+        };
       };
 
       mediaRecorderRef.current = recorder;
@@ -286,7 +311,7 @@ export default function CommentComposer({
                     Click to upload a short video clip
                   </span>
                   <span className="mt-1 text-xs text-gray-400">
-                    MP4, WebM, MOV — max 60s recommended
+                    MP4, WebM, MOV — max 3 minutes
                   </span>
                   <input
                     ref={fileInputRef}

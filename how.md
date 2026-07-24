@@ -624,7 +624,7 @@ Now that comments work fully end-to-end (post, fetch, persist on refresh), we'll
 8. ~~Phase 5~~ — Video upload pipeline hardened ✅ (CORS fix, Cloudinary SDK, server-side proxy, code quality bugs)
 9. **Phase 6** — Auth page (Supabase Auth — sign up / log in)
 10. **Phase 7** — Search page and Channel page
-11. **Phase 8** — Video compression (add `quality`, `width`, `codec` params to Cloudinary upload to reduce file size — saves storage & bandwidth credits)
+11. **Phase 8** — ~~Video compression~~ ✅ (3-min duration limit + Cloudinary auto-compression via upload params)
 12. **Phase 9** — Polish and responsive design
 
 ---
@@ -921,6 +921,58 @@ Video comments are stored on **Cloudinary** (not Supabase). Supabase only stores
 | Monthly credits | 25 (1 credit = 1 GB) |
 
 At ~1-5 MB per short clip, the free tier supports roughly **2,000–10,000 video comments** before running out.
+
+---
+
+### Step 12: 3-Minute Video Limit + Auto Compression
+
+Two client-requested changes to video comments:
+
+#### 12.1: 3-Minute Duration Limit
+
+**The problem:** No limit on video comment length — users could record/upload arbitrarily long videos, eating Cloudinary credits.
+
+**The fix:** Added duration check in `CommentComposer.tsx` for both upload and recording:
+
+- **Upload:** When a file is selected, a temporary `<video>` element reads `duration`. If > 180 seconds, shows error and blocks the file.
+- **Recording:** When `MediaRecorder.onstop` fires, the recorded blob's duration is checked. If > 180 seconds, shows error and discards the recording.
+- Updated hint text from "max 60s recommended" to "max 3 minutes".
+
+```typescript
+// Duration check on file pick
+const tempVideo = document.createElement("video");
+tempVideo.src = URL.createObjectURL(file);
+tempVideo.onloadedmetadata = () => {
+  URL.revokeObjectURL(tempUrl);
+  if (tempVideo.duration > 180) {
+    setError("Video must be under 3 minutes.");
+    return;
+  }
+  // proceed with upload
+};
+```
+
+#### 12.2: Cloudinary Auto-Compression (Option C)
+
+**The problem:** Raw video uploads stored at full quality, wasting Cloudinary storage and bandwidth credits.
+
+**The fix:** Added `transformation` params to the Cloudinary upload in the server route (`/api/upload/video-comment/route.ts`). Cloudinary compresses automatically on save:
+
+```typescript
+const result = await cloudinary.uploader.upload(dataUri, {
+  resource_type: "video",
+  folder: "video_comments",
+  transformation: [{
+    quality: "auto",    // adaptive quality
+    width: 640,         // cap at 640px wide
+    height: 480,        // cap at 480px tall
+    crop: "limit",      // don't upscale, just downscale
+    codec: "h264",      // best compression codec
+  }],
+});
+```
+
+No FFmpeg needed. Cloudinary does all the work server-side.
 
 ---
 
