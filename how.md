@@ -371,7 +371,9 @@ src/
 │   │   └── page.tsx              # Search page — find videos
 │   │
 │   ├── auth/
-│   │   └── page.tsx              # Auth page — sign up / log in
+│   │   ├── page.tsx              # Auth page — Google sign-in
+│   │   └── callback/
+│   │       └── route.ts          # OAuth redirect handler
 │   │
 │   └── api/                      # API routes (backend logic)
 │       ├── videos/
@@ -397,7 +399,9 @@ src/
 │   └── TimestampMarker.tsx       # Marker on video progress bar
 │
 ├── lib/                          # Utility & config files
-│   ├── supabase.ts               # Supabase client setup
+│   ├── supabase.ts               # Supabase client setup (server-side)
+│   ├── supabase-browser.ts       # Supabase client setup (browser-side)
+│   ├── auth-context.tsx          # AuthProvider + useAuth hook
 │   ├── cloudinary.ts             # Cloudinary client setup
 │   └── utils.ts                  # Helper functions
 │
@@ -443,7 +447,9 @@ User visits Home (/)
 | `watch/page.tsx` | Watch page — plays a video and shows its comments |
 | `channel/page.tsx` | Channel page — shows videos from one channel |
 | `search/page.tsx` | Search page — search through videos |
-| `auth/page.tsx` | Sign up / Log in page |
+| `auth/page.tsx` | Sign in page — Google OAuth |
+| `auth/callback/route.ts` | OAuth redirect handler — exchanges code for session |
+| `logout/page.tsx` | Sign out — clears session and redirects to / |
 
 ### Components (`src/components/`)
 | File | Purpose |
@@ -582,7 +588,7 @@ The app compiles and runs locally (`npm run dev`) and is deployed on **Vercel** 
 |------|------|-----------|
 | Home | `/` | 3 demo YouTube video cards in a grid, each links to the watch page |
 | Watch | `/watch` | YouTube player with seek control, custom scrubber bar with timestamp markers, threaded comments, reply-to-replies, video comments (upload or record with progress bar), timestamp badges (click to seek), error feedback on failures |
-| Auth | `/auth` | Empty |
+| Auth | `/auth` | Google sign-in button, OAuth flow via Supabase, session management, avatar + sign out in navbar |
 | Search | `/search` | Empty |
 | Channel | `/channel` | Empty |
 
@@ -610,6 +616,88 @@ The app compiles and runs locally (`npm run dev`) and is deployed on **Vercel** 
 
 ---
 
+### Step 13: Google Authentication (Supabase OAuth)
+
+Implemented Google sign-in using Supabase Auth's built-in OAuth provider.
+
+#### New files created:
+
+**1. `src/lib/supabase-browser.ts`** — Browser-side Supabase client
+
+A `"use client"` module that lazily creates a Supabase client for use in React components (auth operations must happen client-side).
+
+**2. `src/lib/auth-context.tsx`** — AuthProvider + useAuth hook
+
+React context that wraps the app and provides:
+- `session` — current Supabase session (or null)
+- `user` — the logged-in user object (or null)
+- `loading` — true while checking auth state
+
+Listens to `onAuthStateChange` so the UI updates automatically when the user signs in/out.
+
+**3. `src/app/auth/callback/route.ts`** — OAuth redirect handler
+
+A server-side route that receives the OAuth `code` query parameter from Google (via Supabase), calls `supabase.auth.exchangeCodeForSession(code)` to convert it into a session cookie, then redirects to `/`.
+
+**4. `src/app/logout/page.tsx`** — Sign-out page
+
+Calls `supabase.auth.signOut()` and redirects to `/`. Uses `useEffect` + `window.location.href` to avoid SSR issues with `router.push`.
+
+#### Modified files:
+
+**5. `src/app/layout.tsx`** — Wrapped app with AuthProvider
+
+```tsx
+<AuthProvider>
+  <Navbar />
+  {children}
+</AuthProvider>
+```
+
+**6. `src/app/auth/page.tsx`** — Google sign-in button
+
+Replaced the "Coming soon" stub with a full auth page:
+- Shows "Continue with Google" button with the Google logo SVG
+- Calls `supabase.auth.signInWithOAuth({ provider: "google", redirectTo: ... })`
+- Redirects to `/` if already logged in (via `useAuth()` + `useEffect`)
+
+**7. `src/components/Navbar.tsx`** — Shows user state
+
+- **Logged out:** Shows blue "Sign In" button linking to `/auth`
+- **Logged in:** Shows user's Google avatar + "Sign Out" button
+- **Loading:** Shows a pulsing gray circle placeholder
+
+**8. `src/app/watch/page.tsx`** — Auth-gated commenting
+
+- Imports `useAuth` and passes `user.id` as `author_id` when posting comments
+- If not logged in, shows "Sign in to comment" prompt instead of the CommentComposer
+
+#### How the OAuth flow works:
+
+```
+1. User clicks "Sign In" → /auth
+2. User clicks "Continue with Google"
+3. Browser → Supabase → Google consent screen
+4. User picks Google account → approves
+5. Google → Supabase callback with auth code
+6. Supabase → /auth/callback?code=xxx
+7. Route exchanges code for session (sets cookie)
+8. Redirects to / — user is now logged in
+9. Navbar shows avatar + "Sign Out"
+```
+
+#### Setup required (one-time):
+
+1. **Supabase Dashboard** → Authentication → Providers → Google → Enable
+2. Paste Google OAuth **Client ID** and **Client Secret**
+3. Copy Supabase's callback URL
+4. **Google Cloud Console** → APIs & Services → Credentials → Add Supabase callback URL to Authorized Redirect URIs
+5. **Supabase Dashboard** → Authentication → URL Configuration → Redirect URLs:
+   - `http://localhost:3000/auth/callback` (dev)
+   - `https://vidtalk.6281401.xyz/auth/callback` (prod)
+
+---
+
 ## What's Next
 
 Now that comments work fully end-to-end (post, fetch, persist on refresh), we'll continue with:
@@ -622,7 +710,7 @@ Now that comments work fully end-to-end (post, fetch, persist on refresh), we'll
 6. ~~Phase 4~~ — Timestamp comments with scrubber markers ✅ (including float-to-integer fix)
 7. ~~Phase 4.5~~ — Video upload improvements ✅ (reply timestamp support, error feedback, progress bar, dead route cleanup)
 8. ~~Phase 5~~ — Video upload pipeline hardened ✅ (CORS fix, Cloudinary SDK, server-side proxy, code quality bugs)
-9. **Phase 6** — Auth page (Supabase Auth — sign up / log in)
+9. ~~Phase 6~~ — Auth page (Google OAuth via Supabase Auth) ✅
 10. **Phase 7** — Search page and Channel page
 11. **Phase 8** — ~~Video compression~~ ✅ (3-min duration limit + Cloudinary auto-compression via upload params)
 12. **Phase 9** — Polish and responsive design
